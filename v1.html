@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Call List</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+  h1 { color: #333; }
+  input { padding: 10px; width: 300px; margin-bottom: 20px; font-size: 16px; }
+  table { border-collapse: collapse; width: 100%; background: white; }
+  th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+  th { background: #4a90d9; color: white; }
+  .answered { color: green; }
+  .failed { color: red; }
+  .no_answer { color: orange; }
+</style>
+</head>
+<body>
+<h1>Call List</h1>
+<input type="text" id="search" placeholder="Search by name..." oninput="render()">
+<table>
+  <thead><tr><th>Name</th><th>Status</th><th>Length</th><th>Summary</th></tr></thead>
+  <tbody id="body"></tbody>
+</table>
+<script>
+// Data exactly as the server sends it (including its quirks).
+const RAW_CALLS = [
+  {"id": 1, "name": "Anita Sharma", "status": "answered", "duration_secs": 137, "summary": "Booked a follow-up for Friday."},
+  {"id": 2, "name": "Rahul Shah", "status": "failed", "duration_secs": 0, "summary": ""},
+  {"id": 3, "name": null, "status": "answered", "duration_secs": 64, "summary": "Asked about clinic timings."},
+  {"id": 4, "name": "Mohammed Irfan Abdul Rahman Siddiqui", "status": "answered", "duration_secs": 3725, "summary": "Called about his mother's knee surgery. Wanted to know the cost, how many days she would stay, whether insurance is accepted, what to bring on the day, and if the doctor could call him back personally before he decides. Asked the same questions again for his father."},
+  {"id": 5, "name": "priya nair", "status": "no_answer", "duration_secs": 0, "summary": ""},
+  {"id": 6, "name": "Deepak Verma", "status": "answered", "duration_secs": 212, "summary": "Said the doctor was <b>very</b> helpful."},
+  {"id": 7, "name": "Sunita Rao", "status": "answered", "duration_secs": 59, "summary": "Rescheduled to Monday."},
+  {"id": 7, "name": "Sunita Rao", "status": "answered", "duration_secs": 59, "summary": "Rescheduled to Monday."}
+];
+</script>
+<script>
+const calls = RAW_CALLS;
+function render() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const filtered = calls.filter(c => c.name.toLowerCase().includes(q));
+  document.getElementById('body').innerHTML = filtered.map(c => `
+    <tr>
+      <td>${c.name}</td>
+      <td class="${c.status}">${c.status}</td>
+      <td>${c.duration_secs / 60} min</td>
+      <td>${c.summary}</td>
+    </tr>`).join('');
+}
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Call list</title>
+<style>
+  :root {
+    --ink: #1c2b2d;
+    --muted: #5d6b6e;
+    --paper: #f4f7f7;
+    --card: #ffffff;
+    --line: #d8e1e2;
+    --accent: #0f6b6b;
+    --ok-bg: #dff1e6;  --ok-fg: #17603a;
+    --bad-bg: #fbe1de; --bad-fg: #9a2418;
+    --idle-bg: #fdf0d2; --idle-fg: #7a5200;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+    line-height: 1.45;
+  }
+  main { max-width: 920px; margin: 0 auto; padding: 16px 14px 40px; }
+  h1 { font-size: 1.35rem; margin: 8px 0 12px; }
+
+  .search { position: sticky; top: 0; background: var(--paper); padding: 8px 0 10px; z-index: 1; }
+  .search-box { position: relative; }
+  .search input {
+    width: 100%; font: inherit; font-size: 16px; /* 16px stops iOS zoom */
+    padding: 12px 44px 12px 12px; border: 1.5px solid var(--line);
+    border-radius: 8px; background: var(--card); color: var(--ink);
+  }
+  .search input:focus-visible, button:focus-visible {
+    outline: 3px solid var(--accent); outline-offset: 2px;
+  }
+  .clear {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    width: 40px; height: 40px; border: 0; background: none; font-size: 1.3rem;
+    color: var(--muted); cursor: pointer; border-radius: 8px;
+  }
+  .count { margin: 6px 2px 0; font-size: .85rem; color: var(--muted); }
+
+  ul.list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+  .call {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; display: grid; gap: 6px 12px;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "name status" "len len" "sum sum";
+  }
+  .name { grid-area: name; font-weight: 600; overflow-wrap: anywhere; }
+  .name.unknown { font-weight: 500; color: var(--muted); font-style: italic; }
+  .status { grid-area: status; align-self: start; }
+  .len { grid-area: len; font-size: .9rem; color: var(--muted); }
+  .sum { grid-area: sum; font-size: .95rem; overflow-wrap: anywhere; }
+  .sum.empty { color: var(--muted); font-style: italic; }
+  .sum p { margin: 0; }
+  .sum p.clamped {
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .more {
+    margin-top: 4px; padding: 6px 0; min-height: 32px; border: 0; background: none;
+    color: var(--accent); font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer;
+  }
+  mark { background: #ffe58a; color: inherit; border-radius: 2px; padding: 0 1px; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
+    border-radius: 999px; font-size: .8rem; font-weight: 600; white-space: nowrap;
+  }
+  .badge.answered  { background: var(--ok-bg);   color: var(--ok-fg); }
+  .badge.failed    { background: var(--bad-bg);  color: var(--bad-fg); }
+  .badge.no_answer { background: var(--idle-bg); color: var(--idle-fg); }
+
+  .empty-state {
+    margin-top: 16px; padding: 28px 16px; text-align: center; background: var(--card);
+    border: 1px dashed var(--line); border-radius: 10px;
+  }
+  .empty-state p { margin: 0 0 12px; overflow-wrap: anywhere; }
+  .empty-state button {
+    font: inherit; font-weight: 600; padding: 10px 16px; border-radius: 8px;
+    border: 1.5px solid var(--accent); background: var(--card); color: var(--accent); cursor: pointer;
+  }
+
+  /* Laptop: same list becomes a row-per-call layout */
+  @media (min-width: 760px) {
+    main { padding-top: 28px; }
+    h1 { font-size: 1.6rem; }
+    .call {
+      grid-template-columns: 220px 120px 110px 1fr;
+      grid-template-areas: "name status len sum";
+      align-items: start; padding: 14px 18px;
+    }
+    .len { font-size: .95rem; padding-top: 2px; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .call { transition: border-color .15s; }
+    .call:hover { border-color: var(--accent); }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Call list</h1>
+
+  <div class="search" role="search">
+    <div class="search-box">
+      <label for="q" class="sr" style="position:absolute;left:-9999px">Search calls by name</label>
+      <input id="q" type="search" placeholder="Search by name" autocomplete="off" inputmode="search">
+      <button class="clear" id="clear" type="button" aria-label="Clear search" hidden>&times;</button>
+    </div>
+    <div class="count" id="count" aria-live="polite"></div>
+  </div>
+
+  <ul class="list" id="list"></ul>
+  <div id="empty"></div>
+</main>
+
+<script>
+// Data exactly as the server sends it (including its quirks).
+const RAW_CALLS = [
+  {"id": 1, "name": "Anita Sharma", "status": "answered", "duration_secs": 137, "summary": "Booked a follow-up for Friday."},
+  {"id": 2, "name": "Rahul Shah", "status": "failed", "duration_secs": 0, "summary": ""},
+  {"id": 3, "name": null, "status": "answered", "duration_secs": 64, "summary": "Asked about clinic timings."},
+  {"id": 4, "name": "Mohammed Irfan Abdul Rahman Siddiqui", "status": "answered", "duration_secs": 3725, "summary": "Called about his mother's knee surgery. Wanted to know the cost, how many days she would stay, whether insurance is accepted, what to bring on the day, and if the doctor could call him back personally before he decides. Asked the same questions again for his father."},
+  {"id": 5, "name": "priya nair", "status": "no_answer", "duration_secs": 0, "summary": ""},
+  {"id": 6, "name": "Deepak Verma", "status": "answered", "duration_secs": 212, "summary": "Said the doctor was <b>very</b> helpful."},
+  {"id": 7, "name": "Sunita Rao", "status": "answered", "duration_secs": 59, "summary": "Rescheduled to Monday."},
+  {"id": 7, "name": "Sunita Rao", "status": "answered", "duration_secs": 59, "summary": "Rescheduled to Monday."}
+];
+</script>
+<script>
+  const STATUS = {
+    answered:  { label: "Answered",  icon: "✓" },
+    failed:    { label: "Failed",    icon: "!" },
+    no_answer: { label: "No answer", icon: "–" }
+  };
+
+  // Normalise the server data once, so the rest of the page never has to guess.
+  function prepare(raw) {
+    const seen = new Set();
+    return raw
+      .filter(c => !seen.has(c.id) && seen.add(c.id))             // drop duplicate ids
+      .map(c => {
+        const name = (typeof c.name === "string" ? c.name : "").trim();
+        return {
+          id: c.id,
+          name,                                                    // "" when unknown
+          key: fold(name),                                         // searchable form
+          status: STATUS[c.status] ? c.status : "failed",
+          secs: Number(c.duration_secs) || 0,
+          summary: String(c.summary || "").replace(/<[^>]*>/g, "").trim() // text only, never HTML
+        };
+      });
+  }
+  function fold(s) {  // lower-case, no accents, single spaces
+    return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+  }
+  function formatLength(secs, status) {
+    if (secs <= 0) return status === "answered" ? "Under 1 sec" : "Not connected";
+    const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+    if (h) return `${h} hr ${m} min`;
+    if (m) return `${m} min ${s} sec`;
+    return `${s} sec`;
+  }
+
+  const calls = prepare(RAW_CALLS);
+  const $list = document.getElementById("list"), $q = document.getElementById("q"),
+        $count = document.getElementById("count"), $empty = document.getElementById("empty"),
+        $clear = document.getElementById("clear");
+  const expanded = new Set();   // remembers which long summaries are open while typing
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function highlight(node, text, term) {   // builds <mark> with text nodes only (no innerHTML)
+    const i = term ? fold(text).indexOf(term) : -1;
+    if (i < 0 || fold(text).length !== text.length) { node.textContent = text; return; }
+    node.append(text.slice(0, i), Object.assign(el("mark"), { textContent: text.slice(i, i + term.length) }), text.slice(i + term.length));
+  }
+
+  function card(c, term) {
+    const li = el("li", "call");
+    const name = el("div", "name" + (c.name ? "" : " unknown"));
+    c.name ? highlight(name, c.name, term) : (name.textContent = "Unknown caller");
+
+    const st = el("div", "status");
+    const badge = el("span", "badge " + c.status, `${STATUS[c.status].icon} ${STATUS[c.status].label}`);
+    st.append(badge);
+
+    const len = el("div", "len", formatLength(c.secs, c.status));
+    const sum = el("div", "sum" + (c.summary ? "" : " empty"));
+    if (!c.summary) {
+      sum.textContent = "No summary for this call";
+    } else {
+      const p = el("p", c.summary.length > 140 && !expanded.has(c.id) ? "clamped" : "", c.summary);
+      sum.append(p);
+      if (c.summary.length > 140) {
+        const b = el("button", "more", expanded.has(c.id) ? "Show less" : "Show more");
+        b.type = "button";
+        b.setAttribute("aria-expanded", expanded.has(c.id));
+        b.onclick = () => { expanded.has(c.id) ? expanded.delete(c.id) : expanded.add(c.id); render(); };
+        sum.append(b);
+      }
+    }
+    li.append(name, st, len, sum);
+    return li;
+  }
+
+  function render() {
+    const raw = $q.value, term = fold(raw);
+    $clear.hidden = raw === "";
+    const shown = term ? calls.filter(c => c.key.includes(term)) : calls;
+
+    $list.replaceChildren(...shown.map(c => card(c, term)));
+    $count.textContent = term
+      ? `${shown.length} of ${calls.length} calls match`
+      : `${calls.length} calls`;
+
+    $empty.replaceChildren();
+    if (!shown.length) {
+      const box = el("div", "empty-state");
+      box.append(el("p", "", `No calls found for “${raw.trim()}”. Check the spelling or try fewer letters.`));
+      const b = el("button", "", "Clear search"); b.type = "button"; b.onclick = reset;
+      box.append(b);
+      $empty.append(box);
+    }
+  }
+  function reset() { $q.value = ""; render(); $q.focus(); }
+
+  $q.addEventListener("input", render);
+  $clear.addEventListener("click", reset);
+  render();
+</script>
+</body>
+</html>
